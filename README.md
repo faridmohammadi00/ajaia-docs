@@ -2,7 +2,7 @@
 
 A lightweight collaborative document editor: create and edit rich-text documents, import files, and share them with other users as editors or viewers.
 
-**Live demo:** https://ajaia-docs-ecru-xi.vercel.app (accounts below)
+**Live demo:** https://ajaia-docs-ecru-xi.vercel.app (accounts below) · **Walkthrough video:** https://youtu.be/E5SOW8ys03Q
 
 ![Editor](docs/screenshots/3-editor.png)
 

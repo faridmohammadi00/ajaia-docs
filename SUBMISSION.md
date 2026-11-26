@@ -4,7 +4,7 @@
 
 - **Live app:** https://ajaia-docs-ecru-xi.vercel.app
 - **Source:** https://github.com/faridmohammadi00/ajaia-docs
-- **Walkthrough video:** see `VIDEO_URL.txt`
+- **Walkthrough video:** https://youtu.be/E5SOW8ys03Q (also in `VIDEO_URL.txt`)
 
 ## Test accounts (password `ajaia-demo` for all)
 
