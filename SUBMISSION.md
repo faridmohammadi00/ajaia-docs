@@ -38,13 +38,14 @@ Quick sharing check: sign in as Alice and open the welcome document, then sign i
 - Import of `.txt`, `.md` and `.docx` (max 2 MB) into a new document.
 - Sharing by email with editor or viewer roles, role change and revoke. *My documents* and *Shared with me* lists. Read-only mode for viewers, enforced in the API.
 - Persistence in MongoDB. Formatting is stored as structured editor JSON.
+- Live presence: who is viewing or editing now, plus automatic pickup of other people's saves (stretch).
 - Version history with preview and restore (stretch).
 - Markdown export (stretch).
 
 **Not included (deliberate)**
-- Real-time co-editing, comments, real sign-up, attachments and images. See `ARCHITECTURE.md` for the reasoning.
+- Character-level co-editing with live cursors, comments, real sign-up, attachments and images. See `ARCHITECTURE.md` for the reasoning.
 
 **Next with 2–4 more hours**
-1. Real-time collaboration with Yjs and presence indicators.
+1. Character-level co-editing with Yjs and live cursors.
 2. Visual diff between versions.
 3. Rate limiting on login and import, and a "last edited by" field.

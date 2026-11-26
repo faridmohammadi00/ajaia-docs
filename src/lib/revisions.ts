@@ -89,7 +89,7 @@ export async function restoreRevision(user: SessionUser, rawId: string, rawRevId
   const { documents } = await collections();
   const updated = await documents.findOneAndUpdate(
     { _id: id, ...editableBy(user._id) },
-    { $set: { content: rev.content, excerpt: excerptOf(rev.content), updatedAt: new Date() }, $inc: { version: 1 } },
+    { $set: { content: rev.content, excerpt: excerptOf(rev.content), updatedBy: user._id, updatedAt: new Date() }, $inc: { version: 1 } },
     { returnDocument: "after", projection: { version: 1, title: 1 } },
   );
   if (!updated) throw forbidden();

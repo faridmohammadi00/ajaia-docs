@@ -12,7 +12,7 @@ import { useToast } from "./ui/Toast";
 interface Props {
   doc: DocumentView;
   candidates: PublicUser[];
-  onChange: (shares: ShareView[]) => void;
+  onChange?: (shares: ShareView[]) => void;
   onClose: () => void;
 }
 
@@ -29,7 +29,7 @@ export function ShareDialog({ doc, candidates, onChange, onClose }: Props) {
 
   function update(next: ShareView[]) {
     setShares(next);
-    onChange(next);
+    onChange?.(next);
     router.refresh();
   }
 

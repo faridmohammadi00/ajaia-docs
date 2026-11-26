@@ -121,7 +121,7 @@ export async function saveContent(user: SessionUser, rawId: string, content: unk
   const { documents } = await collections();
   const updated = await documents.findOneAndUpdate(
     { _id: id, version: baseVersion, ...editableBy(user._id) },
-    { $set: { content: valid, excerpt: excerptOf(valid), updatedAt: new Date() }, $inc: { version: 1 } },
+    { $set: { content: valid, excerpt: excerptOf(valid), updatedBy: user._id, updatedAt: new Date() }, $inc: { version: 1 } },
     { returnDocument: "after", projection: { version: 1, title: 1, updatedAt: 1 } },
   );
   if (updated) {
@@ -132,7 +132,7 @@ export async function saveContent(user: SessionUser, rawId: string, content: unk
   const { role } = await loadAccess(user, id);
   if (!canEdit(role)) throw forbidden("You have view-only access to this document");
   const current = await documents.findOne({ _id: id }, { projection: { version: 1 } });
-  throw new HttpError(409, "This document was changed elsewhere. Reload to get the latest version.", {
+  throw new HttpError(409, "This document was changed by someone else. Load the latest version to continue.", {
     currentVersion: current?.version,
   });
 }
@@ -156,9 +156,9 @@ export async function deleteDocument(user: SessionUser, rawId: string) {
   const id = parseId(rawId);
   const { role } = await loadAccess(user, id);
   if (!canManage(role)) throw forbidden("Only the owner can delete this document");
-  const { documents, revisions } = await collections();
+  const { documents, revisions, presence } = await collections();
   await documents.deleteOne({ _id: id, ownerId: user._id });
-  await revisions.deleteMany({ docId: id });
+  await Promise.all([revisions.deleteMany({ docId: id }), presence.deleteMany({ docId: id })]);
 }
 
 export async function shareDocument(user: SessionUser, rawId: string, email: string, role: ShareRole) {
@@ -191,11 +191,10 @@ export async function unshareDocument(user: SessionUser, rawId: string, rawUserI
   const id = parseId(rawId);
   const access = await loadAccess(user, id);
   if (!canManage(access.role)) throw forbidden("Only the owner can change sharing");
-  const { documents } = await collections();
-  await documents.updateOne(
-    { _id: id, ownerId: user._id },
-    { $pull: { shares: { userId: parseId(rawUserId) } } },
-  );
+  const userId = parseId(rawUserId);
+  const { documents, presence } = await collections();
+  await documents.updateOne({ _id: id, ownerId: user._id }, { $pull: { shares: { userId } } });
+  await presence.deleteOne({ docId: id, userId });
 }
 
 export async function listShareCandidates(user: SessionUser): Promise<PublicUser[]> {

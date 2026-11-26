@@ -25,6 +25,7 @@ Users and the welcome document are created automatically the first time the app 
 - **Autosave:** changes save automatically after 0.8 s of inactivity (`Ctrl/Cmd+S` saves immediately). The status shows *Unsaved / Saving / All changes saved*. Saves are versioned: if someone else saved a newer version, the stale write is rejected (HTTP 409) and the user is asked to reload instead of silently overwriting.
 - **File import:** **`.txt`, `.md`, `.docx` only, max 2 MB.** Each file becomes a new editable document with headings, emphasis and lists preserved. Other types are rejected with a clear message.
 - **Sharing:** the owner shares by email as *Can edit* or *Can view*, changes roles, or revokes access. The dashboard separates **My documents** and **Shared with me**. Viewers get a read-only editor and the API rejects their writes.
+- **Live presence:** avatars in the document header show who has it open right now, with a green pencil badge and an "is editing" label for active editors. When someone else saves, readers and idle editors get the new content automatically within about 10 seconds. An editor who is typing gets a "Load latest" prompt instead, so their own work is never overwritten.
 - **Version history:** a side panel lists saved versions with author and time. Consecutive saves by the same person within 5 minutes are grouped into one entry. Click an entry to preview it read-only, and (editors and owners) restore it. A restore is itself recorded, so it can be undone.
 - **Dashboard:** document cards with a text preview, search by title or owner, and drag-and-drop import.
 - **Export:** download any readable document as Markdown.
@@ -74,8 +75,8 @@ What is covered:
 - `tests/unit/access.test.ts`: role resolution and permission rules.
 - `tests/unit/import.test.ts`: `.txt`, `.md` (including script stripping), `.docx` conversion, and rejection of unsupported, empty, binary and oversized files.
 - `tests/unit/markdown.test.ts`: Markdown export.
-- `tests/unit/documents.test.ts`: the document service against a real MongoDB: owner/editor/viewer/no-access rules, revoking access, stale write rejection (409), input validation, history grouping and restore permissions.
-- `tests/e2e/core-flow.spec.ts`: in a real browser: sign in, create, format, autosave, reload and verify formatting, share as viewer, sign in as the recipient, see it under *Shared with me*, read-only editor; importing a Markdown file; and restoring another user's earlier version from history.
+- `tests/unit/documents.test.ts`: the document service against a real MongoDB: owner/editor/viewer/no-access rules, revoking access, stale write rejection (409), input validation, history grouping and restore permissions, presence (modes, expiry, leave, revoked access).
+- `tests/e2e/core-flow.spec.ts`: in a real browser: sign in, create, format, autosave, reload and verify formatting, share as viewer, sign in as the recipient, see it under *Shared with me*, read-only editor; importing a Markdown file; restoring another user's earlier version from history; and two browsers on the same document seeing each other and receiving each other's changes.
 
 CI (`.github/workflows/ci.yml`) runs all of the above against a MongoDB service container.
 
@@ -97,6 +98,7 @@ src/
   lib/
     documents.ts       document service (all access checks live here)
     revisions.ts       version history: grouping, preview, restore
+    presence.ts        heartbeat presence and latest-version signal
     access.ts          role rules + MongoDB access filters
     import.ts          file -> sanitized HTML -> editor JSON
     editor/            shared TipTap schema, validation, Markdown export

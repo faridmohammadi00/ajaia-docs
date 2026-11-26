@@ -97,5 +97,25 @@ export function useAutosave(docId: string, initialVersion: number, editor: Edito
     };
   }, [docId, editor]);
 
-  return { status, error, flush };
+  // Replaces content with a newer server version without triggering a save.
+  const applyRemote = useCallback(
+    (content: JSONContent, nextVersion: number) => {
+      if (!editor) return;
+      clearTimeout(timer.current);
+      editor.commands.setContent(content, { emitUpdate: false });
+      version.current = nextVersion;
+      dirty.current = false;
+      blocked.current = false;
+      setError(null);
+      setStatus("saved");
+    },
+    [editor],
+  );
+
+  const sync = {
+    version: () => version.current,
+    busy: () => dirty.current || inFlight.current,
+  };
+
+  return { status, error, flush, applyRemote, sync };
 }

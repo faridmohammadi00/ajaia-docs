@@ -24,6 +24,7 @@ export interface DocumentRecord {
   title: string;
   content: JSONContent;
   excerpt?: string;
+  updatedBy?: ObjectId;
   version: number;
   shares: ShareRecord[];
   createdAt: Date;
@@ -49,6 +50,28 @@ export interface RevisionSummary {
   restored: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export type PresenceMode = "editing" | "viewing";
+
+export interface PresenceRecord {
+  _id: ObjectId;
+  docId: ObjectId;
+  userId: ObjectId;
+  mode: PresenceMode;
+  lastSeen: Date;
+}
+
+export interface ActiveUser {
+  user: PublicUser;
+  mode: PresenceMode;
+  self: boolean;
+}
+
+export interface PresenceState {
+  active: ActiveUser[];
+  version: number;
+  updatedBy: PublicUser | null;
 }
 
 export interface PublicUser {

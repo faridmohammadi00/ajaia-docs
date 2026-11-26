@@ -11,25 +11,28 @@ import {
   Eye,
   History,
   LoaderCircle,
+  RefreshCw,
   RotateCcw,
   Share2,
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api-client";
 import { baseExtensions } from "@/lib/editor/extensions";
-import type { DocumentView, PublicUser } from "@/lib/types";
+import type { DocumentView, PresenceState, PublicUser } from "@/lib/types";
 import { HistoryPanel, type RevisionPreview } from "./HistoryPanel";
 import { RoleBadge } from "./RoleBadge";
 import { ShareDialog } from "./ShareDialog";
 import { TitleInput } from "./TitleInput";
 import { Toolbar } from "./Toolbar";
-import { Avatar, AvatarStack } from "./ui/Avatar";
+import { PresenceStack } from "./PresenceStack";
+import { Avatar } from "./ui/Avatar";
 import { ConfirmDialog } from "./ui/Modal";
 import { useToast } from "./ui/Toast";
 import { useAutosave, type SaveStatus } from "./useAutosave";
+import { usePresence } from "./usePresence";
 
 const STATUS: Record<SaveStatus, { text: string; icon: typeof CloudCheck; cls: string }> = {
   saved: { text: "Saved", icon: CloudCheck, cls: "text-slate-500" },
@@ -53,7 +56,9 @@ export function DocumentWorkspace({ doc, candidates, me }: Props) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [preview, setPreview] = useState<RevisionPreview | null>(null);
   const [confirm, setConfirm] = useState<"delete" | "restore" | null>(null);
-  const [people, setPeople] = useState(() => [doc.owner, ...doc.shares.map((s) => s.user)]);
+  const [remote, setRemote] = useState<string | null>(null);
+  const viewerVersion = useRef(doc.version);
+  const lastEditAt = useRef(0);
 
   const editor = useEditor({
     extensions: [...baseExtensions, Placeholder.configure({ placeholder: "Start writing…" })],
@@ -64,7 +69,46 @@ export function DocumentWorkspace({ doc, candidates, me }: Props) {
       attributes: { class: "doc-content", "aria-label": "Document content", "data-testid": "editor" },
     },
   });
-  const { status, error, flush } = useAutosave(doc.id, doc.version, editable ? editor : null);
+  const { status, error, flush, applyRemote, sync } = useAutosave(doc.id, doc.version, editable ? editor : null);
+  const currentVersion = () => (editable ? sync.version() : viewerVersion.current);
+
+  async function loadLatest() {
+    try {
+      const latest = await api<DocumentView>(`/api/documents/${doc.id}`);
+      if (editable) applyRemote(latest.content, latest.version);
+      else {
+        editor?.commands.setContent(latest.content, { emitUpdate: false });
+        viewerVersion.current = latest.version;
+      }
+      setRemote(null);
+    } catch (err) {
+      toast((err as Error).message, "error");
+    }
+  }
+
+  function onPresence(state: PresenceState) {
+    if (state.version <= currentVersion() || state.updatedBy?.id === me.id) return;
+    const by = state.updatedBy?.name ?? "Someone";
+    // Never overwrite what the user is typing; ask instead.
+    if (editable && (sync.busy() || editor?.isFocused)) setRemote(by);
+    else loadLatest();
+  }
+
+  const active = usePresence(
+    doc.id,
+    () => (editable && Date.now() - lastEditAt.current < 30_000 ? "editing" : "viewing"),
+    onPresence,
+  );
+  const othersEditing = active.filter((a) => !a.self && a.mode === "editing");
+
+  useEffect(() => {
+    if (!editor) return;
+    const mark = () => (lastEditAt.current = Date.now());
+    editor.on("update", mark);
+    return () => {
+      editor.off("update", mark);
+    };
+  }, [editor]);
   const [words, setWords] = useState(0);
   useEffect(() => {
     if (!editor) return;
@@ -124,12 +168,17 @@ export function DocumentWorkspace({ doc, candidates, me }: Props) {
               ) : (
                 <span className="truncate text-slate-500">Shared by {doc.owner.name}</span>
               )}
+              {othersEditing.length > 0 && (
+                <span className="hidden items-center gap-1 truncate text-emerald-700 sm:inline-flex" data-testid="editing-now">
+                  <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+                  {othersEditing.map((a) => a.user.name.split(" ")[0]).join(", ")}{" "}
+                  {othersEditing.length === 1 ? "is" : "are"} editing
+                </span>
+              )}
             </div>
           </div>
 
-          <div className="hidden md:block">
-            <AvatarStack people={people} />
-          </div>
+          <PresenceStack active={active} />
           <button
             className={`icon-btn ${historyOpen ? "bg-slate-100 text-slate-900" : ""}`}
             aria-label="Version history"
@@ -163,6 +212,19 @@ export function DocumentWorkspace({ doc, candidates, me }: Props) {
 
       <div className={`transition-[padding] ${historyOpen ? "lg:pr-96" : ""}`}>
       <main className="mx-auto max-w-[860px] px-3 pb-28 pt-5 sm:px-6">
+        {remote && status !== "conflict" && (
+          <div role="status" className="mb-4 flex items-center gap-3 rounded-xl border border-brand-100 bg-brand-50 px-4 py-2.5 text-sm text-brand-700">
+            <RefreshCw className="size-4 shrink-0" />
+            <span className="flex-1">
+              {remote} made changes.{" "}
+              {status === "saved" ? "Load them when you are ready." : "Loading them will discard your unsaved edits."}
+            </span>
+            <button className="btn" onClick={loadLatest}>
+              Load latest
+            </button>
+          </div>
+        )}
+
         {(status === "error" || status === "conflict") && error && (
           <div role="alert" className="mb-4 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
             <CloudOff className="size-4 shrink-0" />
@@ -172,8 +234,8 @@ export function DocumentWorkspace({ doc, candidates, me }: Props) {
                 Retry
               </button>
             ) : (
-              <button className="btn" onClick={() => window.location.reload()}>
-                Reload
+              <button className="btn" onClick={loadLatest}>
+                Load latest
               </button>
             )}
           </div>
@@ -239,7 +301,6 @@ export function DocumentWorkspace({ doc, candidates, me }: Props) {
         <ShareDialog
           doc={doc}
           candidates={candidates}
-          onChange={(shares) => setPeople([doc.owner, ...shares.map((x) => x.user)])}
           onClose={() => setShareOpen(false)}
         />
       )}

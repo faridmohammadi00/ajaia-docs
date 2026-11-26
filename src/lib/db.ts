@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { MongoClient, type Collection, type Db } from "mongodb";
 import { excerptOf } from "./editor/text";
 import { env } from "./env";
-import type { DocumentRecord, RevisionRecord, UserRecord } from "./types";
+import type { DocumentRecord, PresenceRecord, RevisionRecord, UserRecord } from "./types";
 
 export const SEED_PASSWORD = "ajaia-demo";
 export const SEED_USERS = [
@@ -39,6 +39,9 @@ async function prepare(db: Db) {
     docs.createIndex({ ownerId: 1, updatedAt: -1 }),
     docs.createIndex({ "shares.userId": 1, updatedAt: -1 }),
     db.collection<RevisionRecord>("revisions").createIndex({ docId: 1, updatedAt: -1 }),
+    db.collection<PresenceRecord>("presence").createIndex({ docId: 1, userId: 1 }, { unique: true }),
+    // Mongo removes abandoned sessions on its own.
+    db.collection<PresenceRecord>("presence").createIndex({ lastSeen: 1 }, { expireAfterSeconds: 120 }),
   ]);
 
   await backfillExcerpts(docs);
@@ -117,12 +120,14 @@ export async function collections(): Promise<{
   users: Collection<UserRecord>;
   documents: Collection<DocumentRecord>;
   revisions: Collection<RevisionRecord>;
+  presence: Collection<PresenceRecord>;
 }> {
   const db = await getDb();
   return {
     users: db.collection<UserRecord>("users"),
     documents: db.collection<DocumentRecord>("documents"),
     revisions: db.collection<RevisionRecord>("revisions"),
+    presence: db.collection<PresenceRecord>("presence"),
   };
 }
 

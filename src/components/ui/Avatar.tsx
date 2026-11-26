@@ -29,20 +29,3 @@ export function Avatar({ name, id, size = "md", ring }: { name: string; id: stri
     </span>
   );
 }
-
-export function AvatarStack({ people, max = 4 }: { people: { id: string; name: string; email: string }[]; max?: number }) {
-  const shown = people.slice(0, max);
-  const rest = people.length - shown.length;
-  return (
-    <div className="flex -space-x-2">
-      {shown.map((p) => (
-        <Avatar key={p.id} id={p.email} name={p.name} ring />
-      ))}
-      {rest > 0 && (
-        <span className="inline-flex size-8 items-center justify-center rounded-full bg-slate-200 text-xs font-medium text-slate-600 ring-2 ring-white">
-          +{rest}
-        </span>
-      )}
-    </div>
-  );
-}

@@ -9,6 +9,7 @@ const dbName = `ajaia_test_${Date.now()}`;
 describe.skipIf(!uri)("document service (MongoDB)", () => {
   let svc: typeof import("@/lib/documents");
   let rev: typeof import("@/lib/revisions");
+  let presence: typeof import("@/lib/presence");
   type User = Parameters<typeof svc.listDocuments>[0];
   let alice: User, bob: User, carol: User;
 
@@ -24,6 +25,7 @@ describe.skipIf(!uri)("document service (MongoDB)", () => {
     Object.assign(process.env, { MONGODB_URI: uri, MONGODB_DB: dbName, SESSION_SECRET: "x".repeat(32) });
     svc = await import("@/lib/documents");
     rev = await import("@/lib/revisions");
+    presence = await import("@/lib/presence");
     const { collections } = await import("@/lib/db");
     const { users } = await collections();
     const byEmail = async (email: string) => {
@@ -98,5 +100,32 @@ describe.skipIf(!uri)("document service (MongoDB)", () => {
     const after = await rev.listRevisions(alice, id);
     expect(after[0]).toMatchObject({ version: 5, restored: true });
     expect(await status(rev.listRevisions(alice, "0".repeat(24)))).toBe(404);
+  });
+
+  it("tracks who is present and reports the latest editor", async () => {
+    const { id } = await svc.createDocument(alice, { title: "Presence" });
+    await svc.shareDocument(alice, id, "bob@ajaia.dev", "editor");
+    await svc.shareDocument(alice, id, "carol@ajaia.dev", "viewer");
+    const t0 = new Date();
+    const later = new Date(t0.getTime() + presence.ACTIVE_WINDOW_MS + 1000);
+
+    await presence.heartbeat(alice, id, "viewing", t0);
+    await presence.heartbeat(carol, id, "editing", t0);
+    await svc.saveContent(bob, id, doc("bob was here"), 1);
+    const state = await presence.heartbeat(bob, id, "editing", t0);
+
+    const modes = Object.fromEntries(state.active.map((a) => [a.user.name, a.mode]));
+    expect(modes).toEqual({ "Alice Chen": "viewing", "Bob Martin": "editing", "Carol Diaz": "viewing" });
+    expect(state.active.find((a) => a.self)?.user.name).toBe("Bob Martin");
+    expect(state).toMatchObject({ version: 2, updatedBy: { name: "Bob Martin" } });
+
+    // Stale sessions drop out; leaving and losing access remove the user immediately.
+    const afterwards = await presence.heartbeat(bob, id, "editing", later);
+    expect(afterwards.active.map((a) => a.user.name)).toEqual(["Bob Martin"]);
+    await presence.heartbeat(carol, id, "viewing", later);
+    await svc.unshareDocument(alice, id, carol.id);
+    await presence.leave(bob, id);
+    expect((await presence.heartbeat(alice, id, "viewing", later)).active.map((a) => a.user.name)).toEqual(["Alice Chen"]);
+    expect(await status(presence.heartbeat(carol, id, "viewing", later))).toBe(404);
   });
 });

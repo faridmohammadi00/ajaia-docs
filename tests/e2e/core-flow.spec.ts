@@ -120,3 +120,32 @@ async function signOutFrom(page: Page) {
   await page.goto("/");
   await signOut(page);
 }
+
+test("shows who is here and brings in their changes", async ({ page, browser }) => {
+  test.setTimeout(90_000);
+  const title = `Presence ${Date.now()}`;
+  await signIn(page, "Alice Chen");
+  await page.getByRole("button", { name: "New document" }).click();
+  await page.getByLabel("Document title").fill(title);
+  await page.getByLabel("Document title").press("Enter");
+  await page.getByRole("button", { name: "Share" }).click();
+  await page.getByLabel("Email to share with").fill("bob@ajaia.dev");
+  await page.getByRole("dialog").getByRole("button", { name: "Share" }).click();
+  await expect(page.getByTestId("share-list")).toContainText("Bob Martin");
+  await page.getByRole("button", { name: "Done" }).click();
+
+  const bobContext = await browser.newContext();
+  const bob = await bobContext.newPage();
+  await signIn(bob, "Bob Martin");
+  await bob.goto(page.url());
+  await expect(bob.getByTestId("presence")).toContainText("Alice Chen is viewing", { timeout: 15_000 });
+  await expect(page.getByTestId("presence")).toContainText("Bob Martin is viewing", { timeout: 15_000 });
+
+  await bob.getByTestId("editor").click();
+  await bob.keyboard.type("Hello from Bob");
+  await expect(bob.getByTestId("save-status")).toHaveAttribute("data-status", "saved");
+
+  await expect(page.getByTestId("editor")).toHaveText("Hello from Bob", { timeout: 25_000 });
+  await expect(page.getByTestId("editing-now")).toContainText("Bob is editing", { timeout: 15_000 });
+  await bobContext.close();
+});
