@@ -41,6 +41,8 @@ async function prepare(db: Db) {
     db.collection<RevisionRecord>("revisions").createIndex({ docId: 1, updatedAt: -1 }),
   ]);
 
+  await backfillExcerpts(docs);
+
   const existing = await users.countDocuments({ email: { $in: SEED_USERS.map((u) => u.email) } });
   if (existing === SEED_USERS.length) return;
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
@@ -122,4 +124,13 @@ export async function collections(): Promise<{
     documents: db.collection<DocumentRecord>("documents"),
     revisions: db.collection<RevisionRecord>("revisions"),
   };
+}
+
+// Documents created before excerpts existed.
+async function backfillExcerpts(docs: Collection<DocumentRecord>) {
+  const missing = await docs.find({ excerpt: { $exists: false } }, { projection: { content: 1 } }).limit(500).toArray();
+  if (missing.length === 0) return;
+  await docs.bulkWrite(
+    missing.map((d) => ({ updateOne: { filter: { _id: d._id }, update: { $set: { excerpt: excerptOf(d.content) } } } })),
+  );
 }
