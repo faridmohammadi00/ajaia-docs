@@ -28,3 +28,18 @@ describe("docToMarkdown", () => {
     expect(md).toBe("## Goals\n\n**Ship** it <u>now</u>\n\n1. one\n2. two\n");
   });
 });
+
+describe("plainText", () => {
+  it("separates blocks and truncates", async () => {
+    const { plainText } = await import("@/lib/editor/text");
+    const doc = {
+      type: "doc",
+      content: [
+        { type: "heading", content: [{ type: "text", text: "Title" }] },
+        { type: "paragraph", content: [{ type: "text", text: "Body text" }] },
+      ],
+    };
+    expect(plainText(doc)).toBe("Title Body text");
+    expect(plainText(doc, 7)).toBe("Title B");
+  });
+});

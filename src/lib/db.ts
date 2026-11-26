@@ -1,7 +1,8 @@
 import bcrypt from "bcryptjs";
 import { MongoClient, type Collection, type Db } from "mongodb";
+import { excerptOf } from "./editor/text";
 import { env } from "./env";
-import type { DocumentRecord, UserRecord } from "./types";
+import type { DocumentRecord, RevisionRecord, UserRecord } from "./types";
 
 export const SEED_PASSWORD = "ajaia-demo";
 export const SEED_USERS = [
@@ -37,6 +38,7 @@ async function prepare(db: Db) {
     users.createIndex({ email: 1 }, { unique: true }),
     docs.createIndex({ ownerId: 1, updatedAt: -1 }),
     docs.createIndex({ "shares.userId": 1, updatedAt: -1 }),
+    db.collection<RevisionRecord>("revisions").createIndex({ docId: 1, updatedAt: -1 }),
   ]);
 
   const existing = await users.countDocuments({ email: { $in: SEED_USERS.map((u) => u.email) } });
@@ -62,7 +64,7 @@ async function seedWelcomeDoc(users: Collection<UserRecord>, docs: Collection<Do
   const para = (...content: object[]) => ({ type: "paragraph", content });
   const item = (t: string) => ({ type: "listItem", content: [para(text(t))] });
   const now = new Date();
-  await docs.insertOne({
+  const doc = {
     ownerId: alice._id,
     title: "Welcome to Ajaia Docs",
     version: 1,
@@ -95,16 +97,29 @@ async function seedWelcomeDoc(users: Collection<UserRecord>, docs: Collection<Do
         },
       ],
     },
-  } as DocumentRecord);
+  } as DocumentRecord;
+  doc.excerpt = excerptOf(doc.content);
+  const { insertedId } = await docs.insertOne(doc);
+  await docs.db.collection<RevisionRecord>("revisions").insertOne({
+    docId: insertedId,
+    authorId: alice._id,
+    version: 1,
+    title: doc.title,
+    content: doc.content,
+    createdAt: now,
+    updatedAt: now,
+  } as RevisionRecord);
 }
 
 export async function collections(): Promise<{
   users: Collection<UserRecord>;
   documents: Collection<DocumentRecord>;
+  revisions: Collection<RevisionRecord>;
 }> {
   const db = await getDb();
   return {
     users: db.collection<UserRecord>("users"),
     documents: db.collection<DocumentRecord>("documents"),
+    revisions: db.collection<RevisionRecord>("revisions"),
   };
 }

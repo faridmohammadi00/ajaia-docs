@@ -23,10 +23,32 @@ export interface DocumentRecord {
   ownerId: ObjectId;
   title: string;
   content: JSONContent;
+  excerpt?: string;
   version: number;
   shares: ShareRecord[];
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface RevisionRecord {
+  _id: ObjectId;
+  docId: ObjectId;
+  authorId: ObjectId;
+  version: number;
+  title: string;
+  content: JSONContent;
+  restoredFrom?: ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface RevisionSummary {
+  id: string;
+  version: number;
+  author: PublicUser;
+  restored: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface PublicUser {
@@ -41,6 +63,7 @@ export interface DocumentSummary {
   role: Role;
   owner: PublicUser;
   updatedAt: string;
+  excerpt: string;
 }
 
 export interface ShareView {

@@ -30,10 +30,10 @@ export function TitleInput({ docId, initial, editable }: { docId: string; initia
     }
   }
 
-  if (!editable) return <h1 className="min-w-0 flex-1 truncate text-xl font-semibold">{initial}</h1>;
+  if (!editable) return <h1 className="truncate px-2 text-base font-semibold sm:text-lg">{initial}</h1>;
 
   return (
-    <div className="min-w-0 flex-1">
+    <div className="min-w-0">
       <input
         aria-label="Document title"
         value={value}
@@ -47,7 +47,7 @@ export function TitleInput({ docId, initial, editable }: { docId: string; initia
             e.currentTarget.blur();
           }
         }}
-        className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-xl font-semibold outline-none hover:border-slate-300 focus:border-blue-500 focus:bg-white"
+        className="w-full max-w-xl truncate rounded-lg border border-transparent bg-transparent px-2 py-0.5 text-base font-semibold outline-none transition hover:border-slate-200 focus:border-brand-500 focus:bg-white focus:ring-4 focus:ring-brand-500/15 sm:text-lg"
       />
       {error && <p className="px-2 text-xs text-red-600">{error}</p>}
     </div>

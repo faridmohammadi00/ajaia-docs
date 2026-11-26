@@ -5,7 +5,9 @@ import { canEdit, canManage, editableBy, readableBy, roleFor } from "./access";
 import { collections } from "./db";
 import { EMPTY_DOC } from "./editor/extensions";
 import { assertValidDoc } from "./editor/schema";
+import { excerptOf } from "./editor/text";
 import { forbidden, HttpError, notFound } from "./errors";
+import { recordRevision } from "./revisions";
 import type { SessionUser } from "./session";
 import type { DocumentRecord, DocumentSummary, DocumentView, PublicUser, ShareRole, UserRecord } from "./types";
 
@@ -25,7 +27,7 @@ export function parseId(id: string): ObjectId {
   return new ObjectId(id);
 }
 
-async function usersById(ids: ObjectId[]): Promise<Map<string, PublicUser>> {
+export async function usersById(ids: ObjectId[]): Promise<Map<string, PublicUser>> {
   if (ids.length === 0) return new Map();
   const { users } = await collections();
   const found = await users
@@ -34,7 +36,7 @@ async function usersById(ids: ObjectId[]): Promise<Map<string, PublicUser>> {
   return new Map(found.map((u) => [u._id.toHexString(), toPublic(u)]));
 }
 
-async function loadAccess(user: SessionUser, id: ObjectId) {
+export async function loadAccess(user: SessionUser, id: ObjectId) {
   const { documents } = await collections();
   const doc = await documents.findOne({ _id: id }, { projection: { ownerId: 1, shares: 1 } });
   const role = doc ? roleFor(doc, user._id) : null;
@@ -46,7 +48,7 @@ async function loadAccess(user: SessionUser, id: ObjectId) {
 export async function listDocuments(user: SessionUser) {
   const { documents } = await collections();
   const docs = await documents
-    .find(readableBy(user._id), { projection: { title: 1, ownerId: 1, shares: 1, updatedAt: 1 } })
+    .find(readableBy(user._id), { projection: { title: 1, ownerId: 1, shares: 1, updatedAt: 1, excerpt: 1 } })
     .sort({ updatedAt: -1 })
     .limit(500)
     .toArray();
@@ -62,6 +64,7 @@ export async function listDocuments(user: SessionUser) {
       role,
       owner: owners.get(d.ownerId.toHexString()) ?? UNKNOWN_USER(d.ownerId),
       updatedAt: d.updatedAt.toISOString(),
+      excerpt: d.excerpt ?? "",
     };
     (role === "owner" ? owned : shared).push(summary);
   }
@@ -79,6 +82,7 @@ export async function getDocument(user: SessionUser, rawId: string): Promise<Doc
     role: roleFor(doc, user._id)!,
     owner: people.get(doc.ownerId.toHexString()) ?? UNKNOWN_USER(doc.ownerId),
     updatedAt: doc.updatedAt.toISOString(),
+    excerpt: doc.excerpt ?? "",
     content: doc.content,
     version: doc.version,
     shares: doc.shares.map((s) => ({
@@ -94,16 +98,19 @@ export async function createDocument(
 ): Promise<{ id: string }> {
   const { documents } = await collections();
   const now = new Date();
+  const content = input.content ? assertValidDoc(input.content) : EMPTY_DOC;
   const record: Omit<DocumentRecord, "_id"> = {
     ownerId: user._id,
     title: titleSchema.parse(input.title ?? "Untitled document"),
-    content: input.content ? assertValidDoc(input.content) : EMPTY_DOC,
+    content,
+    excerpt: excerptOf(content),
     version: 1,
     shares: [],
     createdAt: now,
     updatedAt: now,
   };
   const { insertedId } = await documents.insertOne(record as DocumentRecord);
+  await recordRevision({ docId: insertedId, authorId: user._id, version: 1, title: record.title, content: record.content });
   return { id: insertedId.toHexString() };
 }
 
@@ -114,10 +121,13 @@ export async function saveContent(user: SessionUser, rawId: string, content: unk
   const { documents } = await collections();
   const updated = await documents.findOneAndUpdate(
     { _id: id, version: baseVersion, ...editableBy(user._id) },
-    { $set: { content: valid, updatedAt: new Date() }, $inc: { version: 1 } },
-    { returnDocument: "after", projection: { version: 1, updatedAt: 1 } },
+    { $set: { content: valid, excerpt: excerptOf(valid), updatedAt: new Date() }, $inc: { version: 1 } },
+    { returnDocument: "after", projection: { version: 1, title: 1, updatedAt: 1 } },
   );
-  if (updated) return { version: updated.version, updatedAt: updated.updatedAt.toISOString() };
+  if (updated) {
+    await recordRevision({ docId: id, authorId: user._id, version: updated.version, title: updated.title, content: valid });
+    return { version: updated.version, updatedAt: updated.updatedAt.toISOString() };
+  }
 
   const { role } = await loadAccess(user, id);
   if (!canEdit(role)) throw forbidden("You have view-only access to this document");
@@ -146,8 +156,9 @@ export async function deleteDocument(user: SessionUser, rawId: string) {
   const id = parseId(rawId);
   const { role } = await loadAccess(user, id);
   if (!canManage(role)) throw forbidden("Only the owner can delete this document");
-  const { documents } = await collections();
+  const { documents, revisions } = await collections();
   await documents.deleteOne({ _id: id, ownerId: user._id });
+  await revisions.deleteMany({ docId: id });
 }
 
 export async function shareDocument(user: SessionUser, rawId: string, email: string, role: ShareRole) {

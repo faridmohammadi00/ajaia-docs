@@ -1,30 +1,37 @@
 "use client";
 
+import { UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { api } from "@/lib/api-client";
 import type { DocumentView, PublicUser, ShareRole, ShareView } from "@/lib/types";
+import { Avatar } from "./ui/Avatar";
+import { Modal } from "./ui/Modal";
+import { useToast } from "./ui/Toast";
 
 interface Props {
   doc: DocumentView;
   candidates: PublicUser[];
+  onChange: (shares: ShareView[]) => void;
   onClose: () => void;
 }
 
-export function ShareDialog({ doc, candidates, onClose }: Props) {
+export function ShareDialog({ doc, candidates, onChange, onClose }: Props) {
   const router = useRouter();
-  const ref = useRef<HTMLDialogElement>(null);
+  const toast = useToast();
   const [shares, setShares] = useState<ShareView[]>(doc.shares);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<ShareRole>("editor");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  useEffect(() => {
-    ref.current?.showModal();
-  }, []);
-
   const available = candidates.filter((c) => !shares.some((s) => s.user.id === c.id));
+
+  function update(next: ShareView[]) {
+    setShares(next);
+    onChange(next);
+    router.refresh();
+  }
 
   async function upsert(targetEmail: string, targetRole: ShareRole) {
     setPending(true);
@@ -34,9 +41,10 @@ export function ShareDialog({ doc, candidates, onClose }: Props) {
         method: "POST",
         body: JSON.stringify({ email: targetEmail, role: targetRole }),
       });
-      setShares((prev) => [...prev.filter((s) => s.user.id !== res.user.id), res]);
+      const exists = shares.some((s) => s.user.id === res.user.id);
+      update(exists ? shares.map((s) => (s.user.id === res.user.id ? res : s)) : [...shares, res]);
       setEmail("");
-      router.refresh();
+      toast(exists ? `${res.user.name} can now ${res.role === "editor" ? "edit" : "view"}` : `Shared with ${res.user.name}`);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -44,53 +52,44 @@ export function ShareDialog({ doc, candidates, onClose }: Props) {
     }
   }
 
-  async function revoke(userId: string) {
+  async function revoke(user: PublicUser) {
     setError(null);
     try {
-      await api(`/api/documents/${doc.id}/shares/${userId}`, { method: "DELETE" });
-      setShares((prev) => prev.filter((s) => s.user.id !== userId));
-      router.refresh();
+      await api(`/api/documents/${doc.id}/shares/${user.id}`, { method: "DELETE" });
+      update(shares.filter((s) => s.user.id !== user.id));
+      toast(`Removed ${user.name}`);
     } catch (err) {
       setError((err as Error).message);
     }
   }
 
   return (
-    <dialog
-      ref={ref}
-      onClose={onClose}
-      aria-labelledby="share-title"
-      className="m-auto w-full max-w-md rounded-xl p-0 shadow-xl backdrop:bg-slate-900/40"
-    >
-      <div className="p-5">
-        <h2 id="share-title" className="mb-4 text-lg font-semibold">
-          Share “{doc.title}”
-        </h2>
-
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            upsert(email, role);
-          }}
-        >
-          <input
-            type="email"
-            required
-            list="share-candidates"
-            placeholder="name@ajaia.dev"
-            aria-label="Email to share with"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="input flex-1"
-          />
-          <datalist id="share-candidates">
-            {available.map((c) => (
-              <option key={c.id} value={c.email}>
-                {c.name}
-              </option>
-            ))}
-          </datalist>
+    <Modal title={`Share “${doc.title}”`} onClose={onClose} width="max-w-lg" footer={<CloseButton />}>
+      <form
+        className="flex flex-col gap-2 sm:flex-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          upsert(email, role);
+        }}
+      >
+        <input
+          type="email"
+          required
+          list="share-candidates"
+          placeholder="Add people by email"
+          aria-label="Email to share with"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="input flex-1"
+        />
+        <datalist id="share-candidates">
+          {available.map((c) => (
+            <option key={c.id} value={c.email}>
+              {c.name}
+            </option>
+          ))}
+        </datalist>
+        <div className="flex gap-2">
           <select
             aria-label="Access level"
             value={role}
@@ -101,56 +100,79 @@ export function ShareDialog({ doc, candidates, onClose }: Props) {
             <option value="viewer">Can view</option>
           </select>
           <button type="submit" className="btn-primary" disabled={pending}>
-            Share
-          </button>
-        </form>
-        {error && (
-          <p role="alert" className="mt-2 text-sm text-red-600">
-            {error}
-          </p>
-        )}
-
-        <h3 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wide text-slate-500">People with access</h3>
-        <ul className="divide-y divide-slate-100 text-sm" data-testid="share-list">
-          <li className="flex items-center justify-between py-2">
-            <span>
-              <span className="font-medium">{doc.owner.name}</span>{" "}
-              <span className="text-slate-500">{doc.owner.email}</span>
-            </span>
-            <span className="text-slate-500">Owner</span>
-          </li>
-          {shares.map((s) => (
-            <li key={s.user.id} className="flex items-center gap-2 py-2">
-              <span className="min-w-0 flex-1 truncate">
-                <span className="font-medium">{s.user.name}</span>{" "}
-                <span className="text-slate-500">{s.user.email}</span>
-              </span>
-              <select
-                aria-label={`Access for ${s.user.name}`}
-                value={s.role}
-                onChange={(e) => upsert(s.user.email, e.target.value as ShareRole)}
-                className="rounded-md border border-slate-200 px-1 py-1 text-sm"
-              >
-                <option value="editor">Can edit</option>
-                <option value="viewer">Can view</option>
-              </select>
-              <button
-                className="text-sm text-red-600 hover:underline"
-                onClick={() => revoke(s.user.id)}
-                aria-label={`Remove ${s.user.name}`}
-              >
-                Remove
-              </button>
-            </li>
-          ))}
-        </ul>
-
-        <div className="mt-6 flex justify-end">
-          <button className="btn" onClick={() => ref.current?.close()}>
-            Done
+            <UserPlus className="size-4" /> Share
           </button>
         </div>
-      </div>
-    </dialog>
+      </form>
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-red-600">
+          {error}
+        </p>
+      )}
+
+      {available.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {available.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setEmail(c.email)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 py-0.5 pl-0.5 pr-2.5 text-xs text-slate-600 hover:bg-slate-50"
+            >
+              <Avatar id={c.email} name={c.name} size="sm" />
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <h3 className="mb-1 mt-6 text-xs font-semibold uppercase tracking-wide text-slate-500">People with access</h3>
+      <ul className="divide-y divide-slate-100" data-testid="share-list">
+        <Person user={doc.owner}>
+          <span className="text-sm text-slate-500">Owner</span>
+        </Person>
+        {shares.map((s) => (
+          <Person key={s.user.id} user={s.user}>
+            <select
+              aria-label={`Access for ${s.user.name}`}
+              value={s.role}
+              onChange={(e) => upsert(s.user.email, e.target.value as ShareRole)}
+              className="rounded-lg border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-700 hover:border-slate-200"
+            >
+              <option value="editor">Can edit</option>
+              <option value="viewer">Can view</option>
+            </select>
+            <button
+              className="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-red-50 hover:text-red-600"
+              onClick={() => revoke(s.user)}
+              aria-label={`Remove ${s.user.name}`}
+            >
+              Remove
+            </button>
+          </Person>
+        ))}
+      </ul>
+    </Modal>
+  );
+}
+
+function Person({ user, children }: { user: PublicUser; children: React.ReactNode }) {
+  return (
+    <li className="flex items-center gap-3 py-2.5">
+      <Avatar id={user.email} name={user.name} />
+      <span className="min-w-0 flex-1 leading-tight">
+        <span className="block truncate text-sm font-medium">{user.name}</span>
+        <span className="block truncate text-xs text-slate-500">{user.email}</span>
+      </span>
+      {children}
+    </li>
+  );
+}
+
+function CloseButton() {
+  return (
+    <form method="dialog">
+      <button className="btn">Done</button>
+    </form>
   );
 }

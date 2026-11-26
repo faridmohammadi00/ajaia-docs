@@ -1,5 +1,4 @@
 import { notFound, redirect } from "next/navigation";
-import { AppHeader } from "@/components/AppHeader";
 import { DocumentWorkspace } from "@/components/DocumentWorkspace";
 import { getDocument, listShareCandidates } from "@/lib/documents";
 import { HttpError } from "@/lib/errors";
@@ -19,9 +18,6 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   const candidates = doc.role === "owner" ? await listShareCandidates(user) : [];
 
   return (
-    <>
-      <AppHeader userName={user.name} />
-      <DocumentWorkspace doc={doc} candidates={candidates} />
-    </>
+    <DocumentWorkspace doc={doc} candidates={candidates} me={{ id: user.id, name: user.name, email: user.email }} />
   );
 }

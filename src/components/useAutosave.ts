@@ -97,5 +97,5 @@ export function useAutosave(docId: string, initialVersion: number, editor: Edito
     };
   }, [docId, editor]);
 
-  return { status, error, retry: flush };
+  return { status, error, flush };
 }

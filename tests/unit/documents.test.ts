@@ -8,6 +8,7 @@ const dbName = `ajaia_test_${Date.now()}`;
 
 describe.skipIf(!uri)("document service (MongoDB)", () => {
   let svc: typeof import("@/lib/documents");
+  let rev: typeof import("@/lib/revisions");
   type User = Parameters<typeof svc.listDocuments>[0];
   let alice: User, bob: User, carol: User;
 
@@ -22,6 +23,7 @@ describe.skipIf(!uri)("document service (MongoDB)", () => {
   beforeAll(async () => {
     Object.assign(process.env, { MONGODB_URI: uri, MONGODB_DB: dbName, SESSION_SECRET: "x".repeat(32) });
     svc = await import("@/lib/documents");
+    rev = await import("@/lib/revisions");
     const { collections } = await import("@/lib/db");
     const { users } = await collections();
     const byEmail = async (email: string) => {
@@ -69,5 +71,32 @@ describe.skipIf(!uri)("document service (MongoDB)", () => {
     expect(await status(svc.saveContent(alice, id, { type: "doc", content: [{ type: "script" }] }, 1))).toBe(400);
     expect(await status(svc.shareDocument(alice, id, "nobody@ajaia.dev", "viewer"))).toBe(404);
     expect(await status(svc.getDocument(alice, "not-an-id"))).toBe(404);
+  });
+
+  it("groups saves into history entries and restores an older version", async () => {
+    const { id } = await svc.createDocument(alice, { title: "History" });
+    await svc.shareDocument(alice, id, "bob@ajaia.dev", "editor");
+    await svc.shareDocument(alice, id, "carol@ajaia.dev", "viewer");
+
+    await svc.saveContent(alice, id, doc("alice draft"), 1);
+    await svc.saveContent(alice, id, doc("alice final"), 2);
+    await svc.saveContent(bob, id, doc("bob rewrite"), 3);
+
+    const history = await rev.listRevisions(carol, id);
+    expect(history.map((r) => [r.author.name, r.version])).toEqual([
+      ["Bob Martin", 4],
+      ["Alice Chen", 3],
+    ]);
+
+    const aliceEntry = history[1];
+    expect(JSON.stringify((await rev.getRevision(carol, id, aliceEntry.id)).content)).toContain("alice final");
+    expect(await status(rev.restoreRevision(carol, id, aliceEntry.id))).toBe(403);
+
+    expect(await rev.restoreRevision(bob, id, aliceEntry.id)).toEqual({ version: 5 });
+    const current = await svc.getDocument(alice, id);
+    expect(JSON.stringify(current.content)).toContain("alice final");
+    const after = await rev.listRevisions(alice, id);
+    expect(after[0]).toMatchObject({ version: 5, restored: true });
+    expect(await status(rev.listRevisions(alice, "0".repeat(24)))).toBe(404);
   });
 });

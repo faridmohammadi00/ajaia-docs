@@ -27,10 +27,12 @@ MongoDB                 ──  users, documents (shares embedded)
 users     { _id, email (unique), name, passwordHash, createdAt }
 documents { _id, ownerId, title, content (TipTap JSON), version,
             shares: [{ userId, role: "editor" | "viewer", addedAt }],
+            excerpt, createdAt, updatedAt }
+revisions { _id, docId, authorId, version, title, content, restoredFrom?,
             createdAt, updatedAt }
 ```
 
-Indexes: `users.email` (unique), `documents {ownerId, updatedAt}`, `documents {shares.userId, updatedAt}`. Both dashboard lists are served by indexes and sorted by recency. Content is excluded from list queries.
+Indexes: `users.email` (unique), `documents {ownerId, updatedAt}`, `documents {shares.userId, updatedAt}`, `revisions {docId, updatedAt}`. Both dashboard lists are served by indexes and sorted by recency. Content is excluded from list queries. A short plain-text `excerpt` is denormalized on save so cards can show a preview without loading content.
 
 **Why embedded shares:** shares are small, always read with their document, and updated atomically with it. A separate collection would only pay off with thousands of collaborators per document or org/group sharing.
 
@@ -45,6 +47,7 @@ Indexes: `users.email` (unique), `documents {ownerId, updatedAt}`, `documents {s
 | **Autosave + optimistic concurrency** | Each save sends the version it was based on. The update only matches `{_id, version}`, so two editors cannot silently overwrite each other. A stale write gets 409 and the UI offers a reload. This is the minimum correct behavior for shared editing without real-time sync. |
 | **Debounced saves, one request in flight** | Typing produces at most one request every ~0.8 s, and edits made during a save are queued, not dropped. There is a warning on tab close with unsaved changes and a best-effort `keepalive` save on in-app navigation. |
 | **Import pipeline: file → sanitized HTML → editor JSON** | `.md` via `marked`, `.docx` via `mammoth`, `.txt` escaped into paragraphs. Output is sanitized to an allow-list, then parsed by the editor schema on the server. Size (2 MB), type, magic bytes (`.docx`) and binary content are checked with specific error messages. |
+| **Version history as grouped snapshots** | Every successful save updates the latest revision when it is by the same author within 5 minutes, and inserts a new one otherwise. History stays readable (one entry per editing session, not per keystroke) and storage stays bounded. Restore writes the old content as a new version and records a `restoredFrom` entry, so restores are themselves reversible and never fight the 409 check. |
 | **Seeded users + signed JWT cookie** | The brief allows simulated users. Passwords are real bcrypt hashes and the cookie is httpOnly, SameSite=Lax, and signed. Middleware verifies the token at the edge for page redirects, and every API call re-checks the user. |
 | **Zod at the boundary, typed errors inside** | Handlers parse input with Zod. Services throw `HttpError(status, message)`. A single mapper turns these into JSON responses, so error shapes are consistent and the UI can show `error` directly. |
 
@@ -53,7 +56,7 @@ Indexes: `users.email` (unique), `documents {ownerId, updatedAt}`, `documents {s
 - Dashboard queries use indexes, project away document content, and resolve owner names with one batched `$in` lookup (no N+1).
 - One cached MongoDB client per server instance, reused across warm serverless invocations.
 - The toolbar subscribes to editor state through a selector (`useEditorState`), so typing does not re-render the whole page.
-- The editor bundle is only loaded on the document route. The dashboard and login pages ship about 105 kB of JS.
+- The editor bundle is only loaded on the document route. The dashboard and login pages ship about 110 kB of JS.
 
 ## Deliberately out of scope
 
@@ -61,13 +64,12 @@ Indexes: `users.email` (unique), `documents {ownerId, updatedAt}`, `documents {s
 |---|---|
 | Real-time co-editing and presence | The biggest item in the space (CRDT via Yjs + a WebSocket provider). Optimistic versioning gives correct, if not live, multi-user behavior within the timebox. |
 | Comments and suggestions | Needs anchored ranges that survive edits, which only makes sense on top of the real-time model. |
-| Version history | The `version` counter is there. Next step: snapshot content every N versions into a `revisions` collection. |
 | Real sign-up, password reset, orgs | Not what the exercise evaluates. Auth is isolated in `session.ts`, so it can be swapped for an IdP. |
 | Attachments, images, tables | Would need object storage. Images would be the first addition. |
 
 ## What I would build next (2–4 hours)
 
 1. Yjs-based real-time collaboration with presence avatars (replaces the 409 path for concurrent editors).
-2. Version history with restore, built on the existing version counter.
+2. Diff view between versions, and named versions.
 3. Rate limiting on login and import, plus audit fields (`lastEditedBy`).
 4. Import into an existing document (append at cursor) and `.docx` export.

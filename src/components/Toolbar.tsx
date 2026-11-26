@@ -2,6 +2,20 @@
 
 import type { Editor } from "@tiptap/core";
 import { useEditorState } from "@tiptap/react";
+import {
+  Bold,
+  Italic,
+  List,
+  ListOrdered,
+  Minus,
+  Quote,
+  Redo2,
+  RemoveFormatting,
+  Strikethrough,
+  Underline,
+  Undo2,
+  type LucideIcon,
+} from "lucide-react";
 
 type Block = "paragraph" | "h1" | "h2" | "h3";
 
@@ -16,35 +30,31 @@ export function Toolbar({ editor }: { editor: Editor }) {
       bullet: e.isActive("bulletList"),
       ordered: e.isActive("orderedList"),
       quote: e.isActive("blockquote"),
-      block: (e.isActive("heading", { level: 1 })
-        ? "h1"
-        : e.isActive("heading", { level: 2 })
-          ? "h2"
-          : e.isActive("heading", { level: 3 })
-            ? "h3"
-            : "paragraph") as Block,
+      block: ([1, 2, 3].map((l) => (e.isActive("heading", { level: l }) ? `h${l}` : null)).find(Boolean) ??
+        "paragraph") as Block,
       canUndo: e.can().undo(),
       canRedo: e.can().redo(),
     }),
   });
 
-  const setBlock = (b: Block) => {
-    const chain = editor.chain().focus();
-    if (b === "paragraph") chain.setParagraph().run();
-    else chain.setHeading({ level: Number(b[1]) as 1 | 2 | 3 }).run();
-  };
+  const chain = () => editor.chain().focus();
+  const setBlock = (b: Block) =>
+    b === "paragraph" ? chain().setParagraph().run() : chain().setHeading({ level: Number(b[1]) as 1 | 2 | 3 }).run();
 
   return (
     <div
       role="toolbar"
       aria-label="Formatting"
-      className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm"
+      className="flex flex-wrap items-center gap-0.5 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-sm backdrop-blur"
     >
+      <Btn icon={Undo2} label="Undo (Ctrl+Z)" disabled={!s.canUndo} onClick={() => chain().undo().run()} />
+      <Btn icon={Redo2} label="Redo (Ctrl+Shift+Z)" disabled={!s.canRedo} onClick={() => chain().redo().run()} />
+      <Sep />
       <select
         aria-label="Text style"
         value={s.block}
         onChange={(e) => setBlock(e.target.value as Block)}
-        className="h-8 rounded-md border border-transparent bg-transparent px-2 text-sm hover:bg-slate-100"
+        className="h-8 cursor-pointer rounded-lg bg-transparent px-2 text-sm text-slate-700 outline-none hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-brand-500/30"
       >
         <option value="paragraph">Normal text</option>
         <option value="h1">Heading 1</option>
@@ -52,51 +62,37 @@ export function Toolbar({ editor }: { editor: Editor }) {
         <option value="h3">Heading 3</option>
       </select>
       <Sep />
-      <Btn label="Bold (Ctrl+B)" active={s.bold} onClick={() => editor.chain().focus().toggleBold().run()}>
-        <b>B</b>
-      </Btn>
-      <Btn label="Italic (Ctrl+I)" active={s.italic} onClick={() => editor.chain().focus().toggleItalic().run()}>
-        <i className="font-serif">I</i>
-      </Btn>
-      <Btn label="Underline (Ctrl+U)" active={s.underline} onClick={() => editor.chain().focus().toggleUnderline().run()}>
-        <u>U</u>
-      </Btn>
-      <Btn label="Strikethrough" active={s.strike} onClick={() => editor.chain().focus().toggleStrike().run()}>
-        <s>S</s>
-      </Btn>
+      <Btn icon={Bold} label="Bold (Ctrl+B)" active={s.bold} onClick={() => chain().toggleBold().run()} />
+      <Btn icon={Italic} label="Italic (Ctrl+I)" active={s.italic} onClick={() => chain().toggleItalic().run()} />
+      <Btn icon={Underline} label="Underline (Ctrl+U)" active={s.underline} onClick={() => chain().toggleUnderline().run()} />
+      <Btn icon={Strikethrough} label="Strikethrough" active={s.strike} onClick={() => chain().toggleStrike().run()} />
       <Sep />
-      <Btn label="Bulleted list" active={s.bullet} onClick={() => editor.chain().focus().toggleBulletList().run()}>
-        • List
-      </Btn>
-      <Btn label="Numbered list" active={s.ordered} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
-        1. List
-      </Btn>
-      <Btn label="Quote" active={s.quote} onClick={() => editor.chain().focus().toggleBlockquote().run()}>
-        “ ”
-      </Btn>
+      <Btn icon={List} label="Bulleted list" active={s.bullet} onClick={() => chain().toggleBulletList().run()} />
+      <Btn icon={ListOrdered} label="Numbered list" active={s.ordered} onClick={() => chain().toggleOrderedList().run()} />
+      <Btn icon={Quote} label="Quote" active={s.quote} onClick={() => chain().toggleBlockquote().run()} />
+      <Btn icon={Minus} label="Divider" onClick={() => chain().setHorizontalRule().run()} />
       <Sep />
-      <Btn label="Undo (Ctrl+Z)" disabled={!s.canUndo} onClick={() => editor.chain().focus().undo().run()}>
-        ↶
-      </Btn>
-      <Btn label="Redo (Ctrl+Shift+Z)" disabled={!s.canRedo} onClick={() => editor.chain().focus().redo().run()}>
-        ↷
-      </Btn>
+      <Btn
+        icon={RemoveFormatting}
+        label="Clear formatting"
+        onClick={() => chain().unsetAllMarks().clearNodes().run()}
+      />
     </div>
   );
 }
 
 function Btn({
+  icon: Icon,
   label,
   active,
   disabled,
   onClick,
-  children,
 }: {
+  icon: LucideIcon;
   label: string;
   active?: boolean;
   disabled?: boolean;
   onClick: () => void;
-  children: React.ReactNode;
 }) {
   return (
     <button
@@ -107,11 +103,11 @@ function Btn({
       disabled={disabled}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
-      className={`h-8 min-w-8 rounded-md px-2 text-sm disabled:opacity-40 ${
-        active ? "bg-blue-100 text-blue-800" : "text-slate-700 hover:bg-slate-100"
+      className={`inline-flex size-8 items-center justify-center rounded-lg transition disabled:opacity-30 ${
+        active ? "bg-brand-100 text-brand-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
       }`}
     >
-      {children}
+      <Icon className="size-4" strokeWidth={2.25} />
     </button>
   );
 }

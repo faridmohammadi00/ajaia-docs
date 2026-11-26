@@ -2,7 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ArrowRight } from "lucide-react";
 import { api } from "@/lib/api-client";
+import { Avatar } from "./ui/Avatar";
 
 interface Props {
   next: string;
@@ -33,7 +35,7 @@ export function LoginForm({ next, demoUsers, demoPassword }: Props) {
   return (
     <div className="space-y-6">
       <form
-        className="space-y-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
+        className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
           signIn(email, password);
@@ -66,15 +68,19 @@ export function LoginForm({ next, demoUsers, demoPassword }: Props) {
             {error}
           </p>
         )}
-        <button type="submit" disabled={pending} className="btn-primary w-full">
+        <button type="submit" disabled={pending} className="btn-primary h-10 w-full">
           {pending ? "Signing in…" : "Sign in"}
         </button>
       </form>
 
       <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-          Demo accounts · password <code className="normal-case">{demoPassword}</code>
-        </p>
+        <div className="mb-3 flex items-center gap-3 text-xs text-slate-500">
+          <span className="h-px flex-1 bg-slate-200" />
+          <span>
+            Or continue as · password <code className="rounded bg-slate-100 px-1 py-0.5">{demoPassword}</code>
+          </span>
+          <span className="h-px flex-1 bg-slate-200" />
+        </div>
         <div className="grid gap-2">
           {demoUsers.map((u) => (
             <button
@@ -82,10 +88,14 @@ export function LoginForm({ next, demoUsers, demoPassword }: Props) {
               type="button"
               disabled={pending}
               onClick={() => signIn(u.email, demoPassword)}
-              className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-left text-sm hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60"
+              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-sm shadow-xs transition hover:border-brand-500/40 hover:bg-brand-50/40 disabled:opacity-60"
             >
-              <span className="font-medium">{u.name}</span>
-              <span className="text-slate-500">{u.email}</span>
+              <Avatar id={u.email} name={u.name} />
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium">{u.name}</span>
+                <span className="block text-xs text-slate-500">{u.email}</span>
+              </span>
+              <ArrowRight className="size-4 text-slate-400" />
             </button>
           ))}
         </div>
